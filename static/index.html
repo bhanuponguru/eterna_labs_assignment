@@ -26,8 +26,43 @@
       const wsProto = base.startsWith('https') ? 'wss' : 'ws';
       const wsUrl = `${wsProto}://${base.replace(/^https?:\/\//, '')}/ws/`;
 
-      // Tabulator table configuration
-      const table = new Tabulator('#tokens-table', {
+      // helper to parse numeric header filter values: supports ranges (min-max), comparisons (>x, >=x, <x, <=x), or exact numbers
+        function numericFilter(headerValue, rowValue){
+          if (headerValue == null) return true;
+          const v = headerValue.toString().trim();
+          if (v === '') return true;
+          const rv = Number(rowValue);
+          if (isNaN(rv)) return false;
+
+          // range: min-max
+          const rangeMatch = v.match(/^\s*([+-]?\d*\.?\d+)\s*-\s*([+-]?\d*\.?\d+)\s*$/);
+          if (rangeMatch){
+            const min = Number(rangeMatch[1]);
+            const max = Number(rangeMatch[2]);
+            return rv >= min && rv <= max;
+          }
+
+          // comparison: >, >=, <, <=
+          const compMatch = v.match(/^\s*(>=|<=|>|<)\s*([+-]?\d*\.?\d+)\s*$/);
+          if (compMatch){
+            const op = compMatch[1];
+            const num = Number(compMatch[2]);
+            if (op === '>') return rv > num;
+            if (op === '>=') return rv >= num;
+            if (op === '<') return rv < num;
+            if (op === '<=') return rv <= num;
+          }
+
+          // exact number
+          const num = Number(v);
+          if (!isNaN(num)) return rv === num;
+
+          // fallback: not a number format -> no match
+          return false;
+        }
+
+        // Tabulator table configuration
+        const table = new Tabulator('#tokens-table', {
         layout: 'fitColumns',
         index: 'token_address',
         pagination: 'local',
@@ -37,36 +72,36 @@
           {title: 'Address', field: 'token_address', width: 280, headerFilter: 'input'},
           {title: 'Name', field: 'token_name', headerFilter: 'input'},
           {title: 'Ticker', field: 'token_ticker', width: 100},
-          {title: 'Price', field: 'price_sol', formatter: function(cell){
+            {title: 'Price', field: 'price_sol', headerFilter: 'input', headerFilterPlaceholder: 'e.g. 1-100 or >10', headerFilterFunc: function(hv, rv){ return numericFilter(hv, rv); }, formatter: function(cell){
             const v = cell.getValue();
             if (v == null) return '-';
             return Number(v).toLocaleString(undefined, {maximumFractionDigits:8});
           }, hozAlign: 'right', width: 140},
-          {title: '1h %', field: 'price_1hr_change', formatter: function(cell){
+            {title: '1h %', field: 'price_1hr_change', headerFilter: 'input', headerFilterPlaceholder: 'e.g. -5-5 or >1', headerFilterFunc: function(hv, rv){ return numericFilter(hv, rv); }, formatter: function(cell){
             const v = Number(cell.getValue());
             if (isNaN(v)) return '-';
             const sign = v>0?'+':'';
             const cls = v>=0 ? 'pos' : 'neg';
             return `<span class="${cls}">${sign}${v}%</span>`;
           }, hozAlign: 'right', width: 100},
-          {title: '24h %', field: 'price_24hr_change', formatter: function(cell){
+            {title: '24h %', field: 'price_24hr_change', headerFilter: 'input', headerFilterPlaceholder: 'e.g. -10-10 or <=2', headerFilterFunc: function(hv, rv){ return numericFilter(hv, rv); }, formatter: function(cell){
             const v = Number(cell.getValue());
             if (isNaN(v)) return '-';
             const sign = v>0?'+':'';
             const cls = v>=0 ? 'pos' : 'neg';
             return `<span class="${cls}">${sign}${v}%</span>`;
           }, hozAlign: 'right', width: 100},
-          {title: 'Volume (24h)', field: 'volume_sol', hozAlign: 'right', formatter: function(cell){
+            {title: 'Volume (24h)', field: 'volume_sol', headerFilter: 'input', headerFilterPlaceholder: 'e.g. 1000-10000 or >500', headerFilterFunc: function(hv, rv){ return numericFilter(hv, rv); }, hozAlign: 'right', formatter: function(cell){
             const v = cell.getValue();
             if (v == null) return '-';
             return Number(v).toLocaleString();
           }},
-          {title: 'Liquidity', field: 'liquidity_sol', hozAlign: 'right', formatter: function(cell){
+            {title: 'Liquidity', field: 'liquidity_sol', headerFilter: 'input', headerFilterPlaceholder: 'e.g. 100-1000 or <5000', headerFilterFunc: function(hv, rv){ return numericFilter(hv, rv); }, hozAlign: 'right', formatter: function(cell){
             const v = cell.getValue();
             if (v == null) return '-';
             return Number(v).toLocaleString();
           }},
-          {title: 'Txns', field: 'transaction_count', hozAlign: 'right', width: 90},
+            {title: 'Txns', field: 'transaction_count', headerFilter: 'input', headerFilterPlaceholder: 'e.g. 0-100 or >=10', headerFilterFunc: function(hv, rv){ return numericFilter(hv, rv); }, hozAlign: 'right', width: 90},
           {title: 'Protocol', field: 'protocol', width: 120}
         ]
       });
