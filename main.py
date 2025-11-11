@@ -116,6 +116,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         # initially, load all tokens (list of TokenInfo instances)
         tokens = await get_all_tokens()
+        bakcoff=1
 
         while True:
             for i in range(len(tokens)):
@@ -123,8 +124,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     latest = await get_token_info(old.token_address)
                 except HTTPException as e:
-                    # upstream returned a proper HTTP error; log and skip
-                    print(f"get_token_info HTTP error for {old.token_address}: {e.detail}")
+                    # upstream returned a proper HTTP error; log and skip. if returned error 429
+                    if e.status_code == 429:
+                        print(f"Rate limit exceeded for {old.token_address}: {e.detail}")
+                        await asyncio.sleep(backoff)  # backoff before retrying
+                        bakcoff = min(bakcoff * 2, 60)  # exponential backoff up to 60s
+                    else:
+                        print(f"get_token_info HTTP error for {old.token_address}: {e.detail}")
                     continue
                 except Exception as e:
                     # network or parsing error; skip this token this round
@@ -132,18 +138,40 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
 
                 # At this point we expect `latest` to be a TokenInfo model
+                backoff=1
                 if latest != old:
                     # use model_dump() to get a plain dict (pydantic v2)
                     payload = latest.model_dump()
-                    await websocket.send_json(payload)
+                    # sending over websockets can fail if the client disconnected
+                    # guard each send so we don't try to send frames after close
+                    try:
+                        await websocket.send_json(payload)
+                    except WebSocketDisconnect:
+                        # client disconnected while we were sending
+                        print("WebSocket disconnected during send")
+                        return
+                    except Exception as e:
+                        # network error or write failure; stop the websocket loop
+                        print(f"Error sending to websocket: {e}")
+                        return
                     # update the stored copy so future diffs are correct
                     tokens[i] = latest
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(1)
     except WebSocketDisconnect:
+        # client already disconnected; nothing to do
         print("WebSocket disconnected")
+        return
+    except Exception as e:
+        # unexpected error; log and stop
+        print(f"WebSocket error: {e}")
+        return
     finally:
-        await websocket.close()
+        # attempt a graceful close but ignore errors if the connection is already closed
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     import uvicorn

@@ -106,16 +106,20 @@
         ]
       });
 
-      async function fetchInitial(){
-        try{
-          const res = await fetch(base + '/tokens/');
-          if (!res.ok) throw new Error('Failed to fetch tokens');
-          const data = await res.json();
-          if (!Array.isArray(data)) return;
-          table.setData(data);
-        }catch(err){
-          console.error('Initial load error', err);
-        }
+      // initial load using Promise chaining to keep startup sequential
+      function fetchInitial(){
+        return fetch(base + '/tokens/')
+          .then(function(res){
+            if (!res.ok) throw new Error('Failed to fetch tokens: ' + res.status);
+            return res.json();
+          })
+          .then(function(data){
+            if (!Array.isArray(data)) return;
+            table.setData(data);
+          })
+          .catch(function(err){
+            console.error('Initial load error', err);
+          });
       }
 
       function connectWs(){
@@ -143,9 +147,11 @@
         }
       }
 
-      window.addEventListener('load', () => {
-        fetchInitial();
-        connectWs();
+      window.addEventListener('load', function(){
+        // run initial load, then start websocket in a .then chain to preserve order
+        fetchInitial().then(function(){
+          connectWs();
+        });
       });
     </script>
   </body>
