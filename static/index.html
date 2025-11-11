@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Tokens Live</title>
+    <link href="https://unpkg.com/tabulator-tables@5.4.4/dist/css/tabulator.min.css" rel="stylesheet">
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; padding: 18px; }
+      #table-holder { margin-top: 12px; }
+      .muted { color: #666; font-size: 0.95em }
+      .pos { color: green; }
+      .neg { color: red; }
+    </style>
+  </head>
+  <body>
+    <h2>Dexscreener Tokens (live)</h2>
+    <div id="table-holder">
+      <div id="tokens-table"></div>
+    </div>
+
+    <script src="https://unpkg.com/tabulator-tables@5.4.4/dist/js/tabulator.min.js"></script>
+    <script>
+      // base URL resolution: if opened file:// assume localhost:8000, otherwise host:8000
+      const base = (location.protocol === 'file:') ? 'http://127.0.0.1:8000' : `${location.protocol}//${location.hostname}:8000`;
+      const wsProto = base.startsWith('https') ? 'wss' : 'ws';
+      const wsUrl = `${wsProto}://${base.replace(/^https?:\/\//, '')}/ws/`;
+
+      // Tabulator table configuration
+      const table = new Tabulator('#tokens-table', {
+        layout: 'fitColumns',
+        index: 'token_address',
+        pagination: 'local',
+        paginationSize: 30,
+        placeholder: 'No data available',
+        columns: [
+          {title: 'Address', field: 'token_address', width: 280, headerFilter: 'input'},
+          {title: 'Name', field: 'token_name', headerFilter: 'input'},
+          {title: 'Ticker', field: 'token_ticker', width: 100},
+          {title: 'Price', field: 'price_sol', formatter: function(cell){
+            const v = cell.getValue();
+            if (v == null) return '-';
+            return Number(v).toLocaleString(undefined, {maximumFractionDigits:8});
+          }, hozAlign: 'right', width: 140},
+          {title: '1h %', field: 'price_1hr_change', formatter: function(cell){
+            const v = Number(cell.getValue());
+            if (isNaN(v)) return '-';
+            const sign = v>0?'+':'';
+            const cls = v>=0 ? 'pos' : 'neg';
+            return `<span class="${cls}">${sign}${v}%</span>`;
+          }, hozAlign: 'right', width: 100},
+          {title: '24h %', field: 'price_24hr_change', formatter: function(cell){
+            const v = Number(cell.getValue());
+            if (isNaN(v)) return '-';
+            const sign = v>0?'+':'';
+            const cls = v>=0 ? 'pos' : 'neg';
+            return `<span class="${cls}">${sign}${v}%</span>`;
+          }, hozAlign: 'right', width: 100},
+          {title: 'Volume (24h)', field: 'volume_sol', hozAlign: 'right', formatter: function(cell){
+            const v = cell.getValue();
+            if (v == null) return '-';
+            return Number(v).toLocaleString();
+          }},
+          {title: 'Liquidity', field: 'liquidity_sol', hozAlign: 'right', formatter: function(cell){
+            const v = cell.getValue();
+            if (v == null) return '-';
+            return Number(v).toLocaleString();
+          }},
+          {title: 'Txns', field: 'transaction_count', hozAlign: 'right', width: 90},
+          {title: 'Protocol', field: 'protocol', width: 120}
+        ]
+      });
+
+      async function fetchInitial(){
+        try{
+          const res = await fetch(base + '/tokens/');
+          if (!res.ok) throw new Error('Failed to fetch tokens');
+          const data = await res.json();
+          if (!Array.isArray(data)) return;
+          table.setData(data);
+        }catch(err){
+          console.error('Initial load error', err);
+        }
+      }
+
+      function connectWs(){
+        try{
+          const ws = new WebSocket(wsUrl);
+          ws.addEventListener('open', () => console.log('WS connected', wsUrl));
+          ws.addEventListener('message', ev => {
+            try{
+              const obj = JSON.parse(ev.data);
+              // update or add the row by index (token_address)
+              table.updateOrAddData([obj]);
+            }catch(e){ console.error('Invalid ws msg', e); }
+          });
+          ws.addEventListener('close', () => {
+            console.log('WS closed, reconnect in 3s');
+            setTimeout(connectWs, 3000);
+          });
+          ws.addEventListener('error', (e) => {
+            console.error('WS error', e);
+            ws.close();
+          });
+        }catch(e){
+          console.error('WS connect failed', e);
+          setTimeout(connectWs, 3000);
+        }
+      }
+
+      window.addEventListener('load', () => {
+        fetchInitial();
+        connectWs();
+      });
+    </script>
+  </body>
+</html>
